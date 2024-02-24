@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use super::AzCliCommand;
+use super::get_az_cli_command;
 use anyhow::{Error, Result};
 use custom_error::custom_error;
 use log::trace;
@@ -63,9 +63,8 @@ pub fn set_azure_environment(subscription: Option<&str>) -> Result<()> {
 }
 
 fn get_account_info() -> Result<AzAccountInfo> {
-    let command = AzCliCommand::default()
-        .with_name("Show logged in account.")
-        .with_args(vec!["account", "show", "--output", "json"])
+    let command = get_az_cli_command("account")
+        .with_args(vec!["show", "--output", "json"])
         .run()?;
 
     let regex_string = "Please run 'az login' to setup account.";
@@ -93,9 +92,7 @@ fn get_account_info() -> Result<AzAccountInfo> {
 }
 
 fn login() -> Result<()> {
-    let error_pipe_reader = AzCliCommand::default()
-        .with_name("Login")
-        .with_args(vec!["login"])
+    let error_pipe_reader = get_az_cli_command("login")
         .stderr_reader()?;
 
     for line in BufReader::new(error_pipe_reader).lines().flatten() {
@@ -116,9 +113,8 @@ fn login() -> Result<()> {
 }
 
 fn set_target_subscription(subscription_name: &str) -> Result<()> {
-    let command = AzCliCommand::default()
-        .with_name("Login")
-        .with_args(vec!["account", "set", "--subscription", subscription_name])
+    let command = get_az_cli_command("account")
+        .with_args(vec![ "set", "--subscription", subscription_name])
         .run()?;
 
     if command.success() {

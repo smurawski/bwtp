@@ -1,29 +1,56 @@
-use crate::azcli::set_azure_environment;
 use crate::{
-    azcli::AzCliCommand,
+    commands::{set_azure_environment, get_az_cli_command, get_terraform_command},
     resource::{AzureResourceChange, TerraformPlanStep, TerraformResourceChange},
-    terraform::TerraformCommand,
 };
 use anyhow::Result;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
-    io::{self, Read},
+    io::Read,
     path::{Path, PathBuf},
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct OutputTester {
-    azure_cli_authenticated: bool,
-    location: String,
-    bicep_deployment_parameters: Vec<String>,
-    terraform_deployment_parameters: Vec<String>,
-    bicep_whatif_output: Option<AzureResourceChange>,
-    terraform_plan_output: Option<TerraformResourceChange>,
-    parameters: Vec<InfraParameters>,
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationConfig {
+    pub log_level: Option<String>,
+    #[serde(rename = "parameters")]
+    pub infra_parameters: Vec<InfraParameters>,
+    #[serde(rename = "terraformPath")]
+    pub terraform_path: Option<String>,
+    #[serde(rename = "bicepPath")]
+    pub bicep_path: Option<String>,
+    pub expected_results: Option<ExpectedResults>,
 }
 
+impl Default for ApplicationConfig {
+    fn default() -> Self {
+        ApplicationConfig {
+            log_level: Some("info".to_string()),
+            infra_parameters: Vec::new(),
+            terraform_path: Some("./infra/terraform".to_string()),
+            bicep_path: Some("./infra/bicep".to_string()),
+            expected_results: None,
+
+        }
+    }
+}
+
+impl ApplicationConfig {
+    pub fn load(path: &Path) -> Result<ApplicationConfig> {
+        let mut file = File::open(path)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        match serde_yaml::from_str(&contents) {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                error!("Error parsing YAML {}", e);
+                Ok(ApplicationConfig::default())
+            }
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct InfraParameters {
     #[serde(rename = "bicepName")]
@@ -33,17 +60,39 @@ pub struct InfraParameters {
     pub value: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ExpectedResults {
+    pub resource_type: String,
+    pub resource_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct OutputTester {
+    config: ApplicationConfig,
+    azure_cli_authenticated: bool,
+    location: String,
+    bicep_deployment_parameters: Vec<String>,
+    terraform_deployment_parameters: Vec<String>,
+    bicep_whatif_output: Option<AzureResourceChange>,
+    terraform_plan_output: Option<TerraformResourceChange>,
+}
+
 impl OutputTester {
     pub fn new() -> Self {
         OutputTester {
+            config: ApplicationConfig::default(),
             azure_cli_authenticated: false,
             location: "eastus".to_string(),
             bicep_deployment_parameters: Vec::new(),
             terraform_deployment_parameters: Vec::new(),
             bicep_whatif_output: None,
             terraform_plan_output: None,
-            parameters: Vec::new(),
         }
+    }
+
+    pub fn set_application_config(&mut self, config: ApplicationConfig) -> &mut Self {
+        self.config = config;
+        self
     }
 
     pub fn authenticate_azure_cli(&mut self) -> &mut Self {
@@ -55,12 +104,9 @@ impl OutputTester {
         self
     }
 
-    pub fn set_deployment_parameters(&mut self, path: &Path) -> &mut Self {
-        // Read the deployment parameters from the file and store them in self.deployment_parameters
-
-        let config = self.read(path).unwrap();
-        self.parameters = self.load(&config);
-        for entry in &self.parameters {
+    pub fn set_deployment_parameters(&mut self) -> &mut Self {
+        debug!("Deployment parameters: {:?}", self.config.infra_parameters);
+        for entry in &self.config.infra_parameters {
             if let Some(bicep_name) = &entry.bicep_name {
                 if bicep_name == "location" {
                     self.location = entry.value.to_owned();
@@ -73,8 +119,6 @@ impl OutputTester {
                     .push(format!("{}={}", terraform_name, entry.value));
             }
         }
-
-        debug!("Deployment parameters: {:?}", self.parameters);
         self
     }
 
@@ -85,13 +129,12 @@ impl OutputTester {
         }
         // Execute the bicep whatif command and store the output in self.bicep_whatif_output
         let mut command_arguments = vec![
-            "deployment",
             "sub",
             "what-if",
             "--location",
             &self.location,
             "--template-file",
-            "../aks-store-demo/infra/bicep/main.bicep",
+            "main.bicep",
             "--no-pretty-print",
             "--output",
             "json",
@@ -102,15 +145,29 @@ impl OutputTester {
             command_arguments.push(parameter);
         }
 
-        let command = AzCliCommand::default()
-            .with_name("Bicep WhatIf")
+        let path = PathBuf::from(self.config.bicep_path.as_ref().unwrap());
+        let az_bicep = get_az_cli_command("deployment")
             .with_args(command_arguments)
+            .with_working_directory(&path)
             .run()
             .expect("Failed to execute Bicep WhatIf command");
-        if let Some(output) = command.get_stdout() {
+        if let Some(output) = az_bicep.get_stdout() {
             self.bicep_whatif_output = serde_json::from_str(&output).unwrap();
             debug!("Bicep WhatIf output: {:?}", self.bicep_whatif_output);
         }
+        self
+    }
+
+    pub fn init_terraform_environment(&mut self) -> &mut Self {
+        if !self.azure_cli_authenticated {
+            error!("Azure CLI not authenticated. Skipping Terraform Init.");
+            return self;
+        }
+        let path = PathBuf::from(self.config.terraform_path.as_ref().unwrap());
+        get_terraform_command("init")
+            .with_working_directory(&path)
+            .run()
+            .expect("Failed to execute Terraform Init command");
         self
     }
 
@@ -119,22 +176,16 @@ impl OutputTester {
             error!("Azure CLI not authenticated. Skipping Terraform Plan.");
             return self;
         }
-        // Execute the terraform plan command and store the output in self.terraform_plan_output
-        let mut command_arguments = vec!["plan", "-json"];
+        
+        let path = PathBuf::from(self.config.terraform_path.as_ref().unwrap());
+
+        let mut command_arguments = vec!["-json"];
         for parameter in &self.terraform_deployment_parameters {
             command_arguments.push("-var");
             command_arguments.push(parameter);
         }
-        let path = PathBuf::from("../aks-store-demo/infra/terraform");
-        TerraformCommand::default()
-            .with_name("Terraform Init")
-            .with_working_directory(&path)
-            .with_args(vec!["init"])
-            .run()
-            .expect("Failed to execute Terraform Init command");
 
-        let command = TerraformCommand::default()
-            .with_name("Terraform Plan")
+        let command = get_terraform_command("plan")
             .with_working_directory(&path)
             .with_args(command_arguments)
             .run()
@@ -145,6 +196,7 @@ impl OutputTester {
             self.terraform_plan_output = Some(result);
             debug!("Terraform Plan output: {:?}", self.terraform_plan_output);
         }
+        
         self
     }
 
@@ -184,23 +236,5 @@ impl OutputTester {
             }
         }
         result
-    }
-
-    fn read(&self, path: &Path) -> Result<String, io::Error> {
-        let mut file = File::open(path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-
-        Ok(contents)
-    }
-
-    fn load(&self, yaml_str: &str) -> Vec<InfraParameters> {
-        match serde_yaml::from_str(&yaml_str) {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Error parsing YAML {}", e);
-                Vec::new()
-            }
-        }
     }
 }
