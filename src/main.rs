@@ -1,13 +1,16 @@
 #[macro_use]
 extern crate lazy_static;
 
+mod azcli;
+mod find_command;
 mod output_tester;
 mod resource;
-mod azcli;
+mod terraform;
 
 use std::path::Path;
 
 use anyhow::Result;
+use env_logger::Env;
 use output_tester::OutputTester;
 
 lazy_static! {
@@ -16,7 +19,9 @@ lazy_static! {
 }
 
 fn main() -> Result<()> {
-    let test_parameters_file = Path::new("tests/parameters.json");
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
+
+    let test_parameters_file = Path::new("tests/parameters.yaml");
     OutputTester::new()
         .authenticate_azure_cli()
         .set_deployment_parameters(test_parameters_file)

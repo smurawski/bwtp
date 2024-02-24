@@ -2,13 +2,10 @@
 use super::AzCliCommand;
 use anyhow::{Error, Result};
 use custom_error::custom_error;
-use log::{debug, trace};
+use log::trace;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fs:: File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::io::{BufRead, BufReader};
 
 custom_error! {
     pub AzCliError
@@ -53,34 +50,15 @@ pub fn set_azure_environment(subscription: Option<&str>) -> Result<()> {
             if account_subscription.trim_matches('"') == target_subscription {
                 println!("Subscription already configured correctly.\n");
             } else {
-                println!("Setting the target subscription to {}\n", &target_subscription);
+                println!(
+                    "Setting the target subscription to {}\n",
+                    &target_subscription
+                );
                 set_target_subscription(target_subscription)?;
             }
         }
     }
 
-    Ok(())
-}
-
-pub fn setup_extensions_and_preview_commands() -> Result<()> {
-    trace!("Enabling the preview extension for az containerapps.");
-    let extension_url = "https://workerappscliextension.blob.core.windows.net/azure-cli-extension/containerapp-0.2.0-py2.py3-none-any.whl";
-    let _ = AzCliCommand::default()
-        .with_name("Enable Preview Extension.")
-        .with_args(vec!["extension", "add", "--source", extension_url, "--yes"])
-        .run()?;
-
-    trace!("Enabling the extension for az log-analytics.");
-    let _ = AzCliCommand::default()
-        .with_name("Enable Preview Extension.")
-        .with_args(vec!["extension", "add", "--name", "log-anaytics", "--yes"])
-        .run()?;
-
-    trace!("Registering the Microsoft.Web provider.");
-    let _ = AzCliCommand::default()
-        .with_name("Register Microsoft.Web provider.")
-        .with_args(vec!["provider", "register", "--namespace", "Microsoft.Web"])
-        .run()?;
     Ok(())
 }
 

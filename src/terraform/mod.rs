@@ -1,7 +1,3 @@
-#![allow(unused_assignments)]
-
-mod cli;
-
 use crate::find_command::find_command;
 use anyhow::Result;
 use duct::{cmd, ReaderHandle};
@@ -9,14 +5,11 @@ use log::{debug, trace};
 use std::path::PathBuf;
 use std::process::ExitStatus;
 
-pub use cli::*;
-
 lazy_static! {
-    pub static ref AZ_CLI_PATH: PathBuf = get_az_cli_path().unwrap();
+    pub static ref TERRAFORM_PATH: PathBuf = get_terraform_path().unwrap();
 }
 
-#[derive(Clone, Debug)]
-pub struct AzCliCommand<'a> {
+pub struct TerraformCommand<'a> {
     name: String,
     path: PathBuf,
     args: Vec<&'a str>,
@@ -25,24 +18,26 @@ pub struct AzCliCommand<'a> {
     exit_status: Option<ExitStatus>,
     verbose: bool,
     show_progress: bool,
+    working_directory: Option<PathBuf>,
 }
 
-impl<'a> Default for AzCliCommand<'a> {
-    fn default() -> AzCliCommand<'a> {
-        AzCliCommand {
-            name: "login".to_owned(),
-            path: AZ_CLI_PATH.clone(),
+impl<'a> Default for TerraformCommand<'a> {
+    fn default() -> TerraformCommand<'a> {
+        TerraformCommand {
+            name: "plan".to_owned(),
+            path: TERRAFORM_PATH.clone(),
             args: Vec::new(),
             stdout: None,
             stderr: None,
             exit_status: None,
             verbose: false,
             show_progress: false,
+            working_directory: None,
         }
     }
 }
 
-impl<'a> AzCliCommand<'a> {
+impl<'a> TerraformCommand<'a> {
     pub fn with_name(mut self, name: &str) -> Self {
         self.name = name.to_owned();
         self
@@ -56,6 +51,12 @@ impl<'a> AzCliCommand<'a> {
         self.verbose = verbose;
         self
     }
+
+    pub fn with_working_directory(mut self, working_directory: &PathBuf) -> Self {
+        self.working_directory = Some(working_directory.clone());
+        self
+    }
+
     #[allow(dead_code)]
     pub fn with_show_progress(mut self, show_progress: bool) -> Self {
         self.show_progress = show_progress;
@@ -77,24 +78,24 @@ impl<'a> AzCliCommand<'a> {
     }
     pub fn run(mut self) -> Result<Self> {
         trace!("Command: {} running", &self.name);
-        debug!("\t`az {}`", &self.args.join(" "));
-        let output = cmd(&self.path, &self.args)
-            .stderr_capture()
-            .stdout_capture()
-            .unchecked()
-            .run()?;
+        debug!("\t`terraform {}`", &self.args.join(" "));
+        let mut cmd = cmd(&self.path, &self.args);
+        if let Some(working_directory) = &self.working_directory {
+            cmd = cmd.dir(working_directory);
+        }
+        let output = cmd.stderr_capture().stdout_capture().unchecked().run()?;
         self.stdout = Some(String::from_utf8(output.stdout)?);
         self.stderr = Some(String::from_utf8(output.stderr)?);
         self.exit_status = Some(output.status);
-        debug!("Az CLI command stdout: {:?}", &self.stdout);
-        debug!("Az CLI command stderr: {:?}", &self.stderr);
+        debug!("Terraform command stdout: {:?}", &self.stdout);
+        debug!("Terraform command stderr: {:?}", &self.stderr);
         trace!("Finished with command {}", &self.name);
 
         Ok(self)
     }
     pub fn stderr_reader(&self) -> Result<ReaderHandle> {
         trace!("Command {} running", &self.name);
-        debug!("\t`az {}`", &self.args.join(" "));
+        debug!("\t`terraform {}`", &self.args.join(" "));
         let reader = cmd(&self.path, &self.args).stderr_capture().reader()?;
         trace!("Returning reader handle.");
         Ok(reader)
@@ -102,19 +103,19 @@ impl<'a> AzCliCommand<'a> {
     #[allow(dead_code)]
     pub fn stdout_reader(&self) -> Result<ReaderHandle> {
         trace!("Command {} running", &self.name);
-        debug!("\t`az {}`", &self.args.join(" "));
+        debug!("\t`terraform {}`", &self.args.join(" "));
         let reader = cmd(&self.path, &self.args).stdout_capture().reader()?;
         trace!("Returning reader handle.");
         Ok(reader)
     }
 }
 
-fn get_az_cli_path() -> Result<PathBuf> {
+fn get_terraform_path() -> Result<PathBuf> {
     let cmd_name = if cfg!(target_os = "windows") {
-        "az.cmd"
+        "terraform.exe"
     } else {
-        "az"
+        "terraform"
     };
-    let cli_path = find_command(cmd_name).expect("Failed to find the Az CLI.  Please install the Az CLI to continue (https://aka.ms/containerapps/install-az-cli) or use --skip-azure to only process the Compose files.");
+    let cli_path = find_command(cmd_name).expect("Failed to find Terraform.  Please install the Terraform to continue.  https://www.terraform.io/downloads.html");
     Ok(cli_path)
 }

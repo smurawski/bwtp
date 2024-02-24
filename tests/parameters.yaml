@@ -1,0 +1,9 @@
+- bicepName: environmentName
+  value: nevermore
+- bicepName: location
+  terraformName: location
+  value: eastus
+- terraformName: ai_location
+  value: eastus
+- bicepName: principalId
+  value: 9b48de36-2f56-46b9-b1d5-41566657b84c
