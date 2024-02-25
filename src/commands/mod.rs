@@ -111,7 +111,11 @@ impl<'a> Command<'a> {
         for arg in &self.args {
             command_args.push(*arg);
         }
-        let output = cmd(&self.path, command_args)
+        let mut command = cmd(&self.path, command_args);
+        if let Some(working_directory) = &self.working_directory {
+            command = command.dir(working_directory);
+        }
+        let output = command
             .stderr_capture()
             .stdout_capture()
             .unchecked()

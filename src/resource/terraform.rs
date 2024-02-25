@@ -38,11 +38,11 @@ pub struct TerraformPlanStep {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct TerraformHook {
-    resource: TerraformResource,
-    action: String,
-    id_key: Option<String>,
-    id_value: Option<String>,
-    elapsed_seconds: Option<u32>,
+    pub resource: TerraformResource,
+    pub action: String,
+    pub id_key: Option<String>,
+    pub id_value: Option<String>,
+    pub elapsed_seconds: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -54,6 +54,13 @@ pub struct TerraformResource {
     resource_type: String,
     resource_name: String,
     resource_key: Option<String>,
+}
+
+impl TerraformResource {
+    pub fn get_comparison_resource(&self) -> String {
+        let resource_type = str::replace(&self.resource_type, "azurerm_", "");
+        return resource_type.to_string();
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]

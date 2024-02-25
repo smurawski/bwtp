@@ -8,6 +8,10 @@ parameters:
     value: eastus
   - bicepName: principalId
     value: 9b48de36-2f56-46b9-b1d5-41566657b84c
-terraformPath: infra/terraform
-bicepPath: infra/bicep
+terraformPath: ../aks-store-demo/infra/terraform
+bicepPath: ../aks-store-demo/infra/bicep
+expectedResults:
+  - type: resource_group
+  - type: kubernetes_cluster
+  - type: key_vault
 

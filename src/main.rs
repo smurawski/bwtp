@@ -5,7 +5,7 @@ mod commands;
 mod output_tester;
 mod resource;
 
-use std::path::Path;
+use std::{env::var, path::Path};
 
 use anyhow::Result;
 use env_logger::Env;
@@ -24,6 +24,18 @@ fn main() -> Result<()> {
     env_logger::init_from_env(
         Env::default().default_filter_or(log_level)
     );
+
+    if let Ok(only_config) = var("CONFIG") {
+        let print_config = match only_config.to_lowercase().as_str() {
+            "true" | "1" => true,
+            _ => false,
+        };
+        
+        if print_config {
+            println!("{:#?}", &application_config);
+            return Ok(());
+        }
+    }
 
     OutputTester::new()
         .set_application_config(application_config)

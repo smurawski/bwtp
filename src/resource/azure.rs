@@ -3,11 +3,11 @@ use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct AzureResourceChange {
-    changes: Vec<AzureResourceChangeDetail>,
+    pub changes: Vec<AzureResourceChangeDetail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum AzureResourceChangeType {
+pub enum AzureResourceChangeType {
     Create,
     Delete,
     Update,
@@ -22,15 +22,15 @@ impl Default for AzureResourceChangeType {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct AzureResourceChangeDetail {
-    after: Option<AzureResource>,
-    before: Option<AzureResource>,
+    pub after: Option<AzureResource>,
+    pub before: Option<AzureResource>,
     #[serde(rename = "changeType")]
-    change_type: AzureResourceChangeType,
-    delta: Option<String>,
+    pub change_type: AzureResourceChangeType,
+    pub delta: Option<String>,
     #[serde(rename = "resourceId")]
-    resource_id: String,
+    pub resource_id: String,
     #[serde(rename = "unsupportedReason")]
-    unsupported_reason: Option<String>,
+    pub unsupported_reason: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -43,6 +43,21 @@ pub struct AzureResource {
     tags: Option<HashMap<String, String>>,
     #[serde(rename = "type")]
     resource_type: String,
+}
+
+impl AzureResource {
+    pub fn get_comparison_resource(&self) -> String {
+        match self.resource_type.as_str() {
+            "Microsoft.Resources/resourceGroups" => "resource_group".to_string(),
+            "Microsoft.ContainerService/managedClusters" => "kubernetes_cluster".to_string(),
+            "Microsoft.Network/virtualNetworks" => "virtual_network".to_string(),
+            "Microsoft.Network/publicIPAddresses" => "public_ip".to_string(),
+            "Microsoft.Network/networkInterfaces" => "network_interface".to_string(),
+            "Microsoft.Network/networkSecurityGroups" => "network_security_group".to_string(),
+            "Microsoft.KeyVault/vaults" => "key_vault".to_string(),
+            _ => self.resource_type.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
