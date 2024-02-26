@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::output_tester::ResourceResult;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct AzureResourceChange {
@@ -46,8 +47,8 @@ pub struct AzureResource {
 }
 
 impl AzureResource {
-    pub fn get_comparison_resource(&self) -> String {
-        match self.resource_type.as_str() {
+    pub fn get_comparison_resource(&self) -> ResourceResult {
+        let resource_type = match self.resource_type.as_str() {
             "Microsoft.Resources/resourceGroups" => "resource_group".to_string(),
             "Microsoft.ContainerService/managedClusters" => "kubernetes_cluster".to_string(),
             "Microsoft.Network/virtualNetworks" => "virtual_network".to_string(),
@@ -55,7 +56,14 @@ impl AzureResource {
             "Microsoft.Network/networkInterfaces" => "network_interface".to_string(),
             "Microsoft.Network/networkSecurityGroups" => "network_security_group".to_string(),
             "Microsoft.KeyVault/vaults" => "key_vault".to_string(),
+            "Microsoft.Authorization/roleAssignments" => "role_assignment".to_string(),
             _ => self.resource_type.to_string(),
+        };
+        ResourceResult {
+            resource_type: resource_type,
+            resource_name: Some(self.name.clone()),
+            provider: None,
+            is_expected: None,
         }
     }
 }

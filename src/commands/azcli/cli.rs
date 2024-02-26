@@ -2,7 +2,7 @@
 use super::get_az_cli_command;
 use anyhow::{Error, Result};
 use custom_error::custom_error;
-use log::trace;
+use log::{info, trace};
 use regex::Regex;
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
@@ -30,7 +30,7 @@ pub struct AzAccountInfo {
 
 pub fn set_azure_environment(subscription: Option<&str>) -> Result<()> {
     trace!("Entering set azure environment.");
-    println!(
+    info!(
         "Checking to see if the Azure CLI is authenticated and which subscription is default."
     );
     let account = match get_account_info() {
@@ -38,19 +38,19 @@ pub fn set_azure_environment(subscription: Option<&str>) -> Result<()> {
         Err(_) => {
             trace!("Failed to get existing login information.  Prompting for new login.");
             login()?;
-            println!("Checking for the default subscription.");
+            info!("Checking for the default subscription.");
             get_account_info()?
         }
     };
 
     if let Some(account_subscription) = account.subscription_name {
-        println!("The default subscription is {}", &account_subscription);
+        info!("The default subscription is {}", &account_subscription);
 
         if let Some(target_subscription) = subscription {
             if account_subscription.trim_matches('"') == target_subscription {
-                println!("Subscription already configured correctly.\n");
+                info!("Subscription already configured correctly.\n");
             } else {
-                println!(
+                info!(
                     "Setting the target subscription to {}\n",
                     &target_subscription
                 );
@@ -103,9 +103,9 @@ fn login() -> Result<()> {
 
         if let Some(m) = warn.captures(&line) {
             if let Some(m2) = logged_in.captures(&line) {
-                println!("{}", &m2[1]);
+                info!("{}", &m2[1]);
             } else {
-                println!("{}", &m[1]);
+                info!("{}", &m[1]);
             }
         }
     }

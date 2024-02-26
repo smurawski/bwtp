@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::output_tester::ResourceResult;
+
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -57,9 +59,14 @@ pub struct TerraformResource {
 }
 
 impl TerraformResource {
-    pub fn get_comparison_resource(&self) -> String {
+    pub fn get_comparison_resource(&self) -> ResourceResult {
         let resource_type = str::replace(&self.resource_type, "azurerm_", "");
-        return resource_type.to_string();
+        ResourceResult {
+            resource_type: resource_type,
+            resource_name: Some(self.resource_name.clone()),
+            provider: None,
+            is_expected: None,
+        }
     }
 }
 

@@ -3,7 +3,7 @@ use crate::{
     resource::{AzureResourceChange, TerraformPlanStep, TerraformResourceChange},
 };
 use anyhow::{anyhow, Result};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -21,7 +21,7 @@ pub struct ApplicationConfig {
     #[serde(rename = "bicepPath")]
     pub bicep_path: Option<String>,
     #[serde(rename = "expectedResults")]
-    pub expected_results: Vec<ExpectedResults>,
+    pub expected_results: Vec<ResourceResult>,
 }
 
 impl Default for ApplicationConfig {
@@ -62,12 +62,14 @@ pub struct InfraParameters {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct ExpectedResults {
+pub struct ResourceResult {
     #[serde(rename = "type")]
     pub resource_type: String,
-    #[serde(rename = "name")]
+    #[serde(rename = "name", skip_serializing_if = "Option::is_none")]
     pub resource_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<Provider>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_expected: Option<bool>,
 }
 
@@ -96,10 +98,9 @@ impl Provider {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct ActualResults {
-    pub expected_results: Vec<ExpectedResults>,
-    pub actual_results: Vec<ExpectedResults>,
+    pub expected_results: Vec<ResourceResult>,
+    pub actual_results: Vec<ResourceResult>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct OutputTester {
@@ -126,11 +127,13 @@ impl OutputTester {
     }
 
     pub fn set_application_config(&mut self, config: ApplicationConfig) -> &mut Self {
+        info!("Setting application config");
         self.config = config;
         self
     }
 
     pub fn authenticate_azure_cli(&mut self) -> &mut Self {
+        info!("Authenticating Azure CLI.");
         match set_azure_environment(None) {
             Ok(_) => self.azure_cli_authenticated = true,
             Err(e) => error!("Error setting Azure environment: {}", e),
@@ -140,6 +143,7 @@ impl OutputTester {
     }
 
     pub fn set_deployment_parameters(&mut self) -> &mut Self {
+        info!("Setting deployment parameters.");
         debug!("Deployment parameters: {:?}", self.config.infra_parameters);
         for entry in &self.config.infra_parameters {
             if let Some(bicep_name) = &entry.bicep_name {
@@ -158,6 +162,7 @@ impl OutputTester {
     }
 
     pub fn execute_bicep_whatif(&mut self) -> &mut Self {
+        info!("Executing Bicep WhatIf.");
         if !self.azure_cli_authenticated {
             error!("Azure CLI not authenticated. Skipping Bicep What If.");
             return self;
@@ -200,6 +205,7 @@ impl OutputTester {
     }
 
     pub fn init_terraform_environment(&mut self) -> &mut Self {
+        info!("Initializing Terraform environment.");
         if !self.azure_cli_authenticated {
             error!("Azure CLI not authenticated. Skipping Terraform Init.");
             return self;
@@ -213,6 +219,7 @@ impl OutputTester {
     }
 
     pub fn execute_terraform_plan(&mut self) -> &mut Self {
+        info!("Executing Terraform Plan.");
         if !self.azure_cli_authenticated {
             error!("Azure CLI not authenticated. Skipping Terraform Plan.");
             return self;
@@ -243,6 +250,7 @@ impl OutputTester {
     }
 
     pub fn compare_bicep_whatif_and_terraform_plan(&self) -> Result<()> {
+        info!("Comparing Bicep WhatIf and Terraform Plan.");
         if !self.azure_cli_authenticated {
             error!("Azure CLI not authenticated. Skipping Comparison.");
             return Err(anyhow!("Azure CLI not authenticated. Skipping Comparison."));
@@ -279,14 +287,14 @@ impl OutputTester {
         Ok(())
     }
 
-    fn process_unexpected_bicep_results(&self,  terraform_resources: &mut Vec<String>, x: &String) -> ExpectedResults {
+    fn process_unexpected_bicep_results(&self,  terraform_resources: &mut Vec<ResourceResult>, x: &ResourceResult) -> ResourceResult {
         let mut unexpected_provider = Provider::new().set_bicep();
-        if terraform_resources.contains(x) {
+        if terraform_resources.iter().any(|y| y.resource_type == x.resource_type){
             unexpected_provider = unexpected_provider.set_terraform();
-            self.remove_matched_resource(x,  terraform_resources)
+            self.remove_matched_resource(&x.resource_type,  terraform_resources)
         }
-        let unexpected_result = ExpectedResults {
-            resource_type: x.to_string(),
+        let unexpected_result = ResourceResult {
+            resource_type: x.resource_type.clone(),
             resource_name: None,
             provider: Some(unexpected_provider),
             is_expected: Some(false),
@@ -294,14 +302,14 @@ impl OutputTester {
         unexpected_result
     }
 
-    fn process_unexpected_terraform_results(&self, azure_resources: &mut Vec<String>, x: &String) -> ExpectedResults {
+    fn process_unexpected_terraform_results(&self, azure_resources: &mut Vec<ResourceResult>, x: &ResourceResult) -> ResourceResult {
         let mut unexpected_provider = Provider::new().set_terraform();
-        if azure_resources.contains(x) {
+        if azure_resources.iter().any(|y| y.resource_type == x.resource_type) {
             unexpected_provider = unexpected_provider.set_bicep();
-            self.remove_matched_resource(x, azure_resources)
+            self.remove_matched_resource(&x.resource_type, azure_resources)
         }
-        let unexpected_result = ExpectedResults {
-            resource_type: x.to_string(),
+        let unexpected_result = ResourceResult {
+            resource_type: x.resource_type.clone(),
             resource_name: None,
             provider: Some(unexpected_provider),
             is_expected: Some(false),
@@ -309,15 +317,15 @@ impl OutputTester {
         unexpected_result
     }
 
-    fn process_expected_results(&self, expected: &ExpectedResults, azure_resources: &mut Vec<String>, terraform_resources: &mut Vec<String>) -> ExpectedResults {
+    fn process_expected_results(&self, expected: &ResourceResult, azure_resources: &mut Vec<ResourceResult>, terraform_resources: &mut Vec<ResourceResult>) -> ResourceResult {
         let mut actual_result = expected.clone();
         actual_result.is_expected = Some(true);
         let mut provider = Provider::new();
-        if azure_resources.contains(&expected.resource_type) {
+        if azure_resources.iter().any(|x| x.resource_type == expected.resource_type) {
             provider = provider.set_bicep();
             self.remove_matched_resource(&expected.resource_type, azure_resources);
         }
-        if terraform_resources.contains(&expected.resource_type) {
+        if terraform_resources.iter().any(|x| x.resource_type == expected.resource_type) {
             provider = provider.set_terraform();
             self.remove_matched_resource(&expected.resource_type, terraform_resources);
         }
@@ -325,27 +333,27 @@ impl OutputTester {
         actual_result
     }
 
-    fn get_terraform_resources_for_comparison(&self) -> Vec<String> {
+    fn get_terraform_resources_for_comparison(&self) -> Vec<ResourceResult> {
         self.terraform_plan_output
             .as_ref()
             .unwrap()
             .planned_change
             .iter()
-            .map(|x| x.change.as_ref().unwrap().resource.get_comparison_resource().to_string())
-            .collect::<Vec<String>>()
+            .map(|x| x.change.as_ref().unwrap().resource.get_comparison_resource())
+            .collect::<Vec<ResourceResult>>()
     }
 
-    fn get_bicep_resources_for_comparison(&self) -> Vec<String> {
+    fn get_bicep_resources_for_comparison(&self) -> Vec<ResourceResult> {
         self.bicep_whatif_output
             .as_ref()
             .unwrap()
             .changes
             .iter()
-            .map(|x| x.after.as_ref().unwrap().get_comparison_resource()).collect::<Vec<String>>()
+            .map(|x| x.after.as_ref().unwrap().get_comparison_resource()).collect::<Vec<ResourceResult>>()
     }
 
-    fn remove_matched_resource(&self, resource: &str, vec: &mut Vec<String>) {
-        if let Some(index) = vec.iter().position(|value| *value == resource) {
+    fn remove_matched_resource(&self, resource: &str, vec: &mut Vec<ResourceResult>) {
+        if let Some(index) = vec.iter().position(|value| *&value.resource_type == resource) {
             vec.swap_remove(index);
         }
     }

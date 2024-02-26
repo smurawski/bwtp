@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let config_file_path = Path::new("tests/parameters.yaml");
     let application_config = ApplicationConfig::load(config_file_path)?;
 
-    let log_level = application_config.log_level.as_deref().unwrap_or("info");
+    let log_level = application_config.log_level.as_deref().unwrap_or("warn");
     env_logger::init_from_env(
         Env::default().default_filter_or(log_level)
     );
